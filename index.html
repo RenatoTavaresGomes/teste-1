@@ -2,36 +2,60 @@
 <html lang="en">
 	<head>
 <script>
-/* arquivos grandes divididos em partes pequenas (e o wasm comprimido) para caber no upload pelo site do GitHub */
+/* Arquivos grandes divididos em partes pequenas (upload pelo site do GitHub) e o wasm comprimido.
+   Cada parte tem ?v=VERSAO para nunca misturar partes de versoes diferentes em cache. */
 (function () {
-  var CFG = {"index.wasm": {"partes": ["index.wasm.p00", "index.wasm.p01", "index.wasm.p02"], "total": 37902138, "gz": true, "tipo": "application/wasm"}, "index.pck": {"partes": ["index.pck.p00", "index.pck.p01", "index.pck.p02", "index.pck.p03", "index.pck.p04"], "total": 18010952, "gz": false, "tipo": "application/octet-stream"}}, f0 = window.fetch.bind(window);
+  var CFG = {"index.wasm": {"partes": ["index.wasm.p00", "index.wasm.p01", "index.wasm.p02"], "total": 39514754, "gz": true, "tipo": "application/wasm"}, "index.pck": {"partes": ["index.pck.p00", "index.pck.p01", "index.pck.p02", "index.pck.p03", "index.pck.p04"], "total": 18011208, "gz": false, "tipo": "application/octet-stream"}}, VER = "1795355992", f0 = window.fetch.bind(window);
+  function parte(p) {
+    var url = new URL(p, document.baseURI).href + "?v=" + VER, t = 0;
+    function tentar() {
+      return f0(url, t ? { cache: "reload" } : undefined).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r;
+      }).catch(function (e) {
+        if (++t < 4) return new Promise(function (ok) { setTimeout(ok, 700 * t); }).then(tentar);
+        throw new Error("Falha ao baixar " + p + " (" + e.message + "). Recarregue a pagina com Ctrl+F5.");
+      });
+    }
+    var pr = tentar();
+    pr.catch(function () {});
+    return pr;
+  }
   window.fetch = function (entrada, opcoes) {
     var url = typeof entrada === "string" ? entrada : (entrada && entrada.url) || "";
     var nome = null;
     for (var k in CFG) { if (url.split("?")[0].slice(-k.length) === k) nome = k; }
     if (!nome) return f0(entrada, opcoes);
-    var c = CFG[nome];
-    return Promise.all(c.partes.map(function (p) { return f0(new URL(p, document.baseURI).href); })).then(function (rs) {
-      rs.forEach(function (r) { if (!r.ok) throw new Error("falha ao baixar " + r.url + ": " + r.status); });
-      var i = 0, leitor = null;
-      var corpo = new ReadableStream({
-        pull: function (ctl) {
-          function ler() {
-            if (!leitor) { if (i >= rs.length) { ctl.close(); return; } leitor = rs[i++].body.getReader(); }
-            return leitor.read().then(function (x) {
-              if (x.done) { leitor = null; return ler(); }
-              ctl.enqueue(x.value);
+    var c = CFG[nome], n = c.partes.length, i = 0, leitor = null, lidos = 0, prox = parte(c.partes[0]);
+    var corpo = new ReadableStream({
+      pull: function (ctl) {
+        function ler() {
+          if (!leitor) {
+            if (i >= n) {
+              if (!c.gz && lidos !== c.total) throw new Error("Arquivo incompleto: " + nome + " (" + lidos + " de " + c.total + " bytes). Recarregue com Ctrl+F5.");
+              ctl.close(); return;
+            }
+            return prox.then(function (r) {
+              leitor = r.body.getReader();
+              i++;
+              if (i < n) prox = parte(c.partes[i]);
+              return ler();
             });
           }
-          return ler();
+          return leitor.read().then(function (x) {
+            if (x.done) { leitor = null; return ler(); }
+            lidos += x.value.length;
+            ctl.enqueue(x.value);
+          });
         }
-      });
-      if (c.gz) {
-        if (typeof DecompressionStream === "undefined") throw new Error("navegador antigo: atualize o navegador");
-        corpo = corpo.pipeThrough(new DecompressionStream("gzip"));
+        return ler();
       }
-      return new Response(corpo, { status: 200, headers: { "Content-Type": c.tipo, "Content-Length": String(c.total) } });
     });
+    if (c.gz) {
+      if (typeof DecompressionStream === "undefined") return Promise.reject(new Error("Navegador antigo: atualize o navegador."));
+      corpo = corpo.pipeThrough(new DecompressionStream("gzip"));
+    }
+    return Promise.resolve(new Response(corpo, { status: 200, headers: { "Content-Type": c.tipo, "Content-Length": String(c.total) } }));
   };
 })();
 </script>
@@ -145,7 +169,7 @@ body {
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":18010952,"index.wasm":37902138},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":18011208,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
